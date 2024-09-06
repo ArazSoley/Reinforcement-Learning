@@ -109,7 +109,8 @@ class Agent:
         epsilon_coeff = (epsilon_end / epsilon_start) ** (1 / max_episodes)     # Used for exponential decay
         m = (epsilon_end - epsilon_start) / max_episodes                       # Used for linear decay
         episode = 0
-        
+        Agent.unsolvable_subpuzzle.flag = True
+        Agent.select_action.max_potential = -1e9
 
         while episode < max_episodes:
             stack = []
@@ -124,7 +125,7 @@ class Agent:
                     self.V[self.env.state_string] = default_state_value
 
                 if update_on_increase:
-                    if max_G > self.V[self.env.state_string] or self.V[self.env.state_string] == self.default_state_value:
+                    if max_G > self.V[self.env.state_string] or self.V[self.env.state_string] <= self.default_state_value:
                         self.V[self.env.state_string] = self.V[self.env.state_string] + learning_rate * (max_G - self.V[self.env.state_string])
                 else:
                     self.V[self.env.state_string] = self.V[self.env.state_string] + learning_rate * (max_G - self.V[self.env.state_string])
@@ -146,7 +147,7 @@ class Agent:
                         self.env.set_state(next_S, next_S_string, next_agent_pos)
                         max_G, _, _, _, _ = self.select_action(epsilon)
                         if update_on_increase:
-                            if max_G > self.V[self.env.state_string] or self.V[self.env.state_string] == self.default_state_value:
+                            if max_G > self.V[self.env.state_string] or self.V[self.env.state_string] <= self.default_state_value:
                                 self.V[self.env.state_string] = self.V[self.env.state_string] + learning_rate * (max_G - self.V[self.env.state_string])
                         else:
                             self.V[self.env.state_string] = self.V[self.env.state_string] + learning_rate * (max_G - self.V[self.env.state_string])
@@ -187,6 +188,8 @@ class Agent:
         epsilon_coeff = (epsilon_end / epsilon_start) ** (1 / max_episodes)     # Used for exponential decay
         m = (epsilon_end - epsilon_start) / max_episodes                       # Used for linear decay
         episode = 0
+        Agent.unsolvable_subpuzzle.flag = True
+        Agent.select_action.max_potential = -1e9
 
         while episode < max_episodes:
             self.env.set_state(self.S0_info["state"], self.S0_info["state_string"], self.S0_info["agent_pos"])
@@ -198,6 +201,7 @@ class Agent:
             step = 0
             done = False
             while True:
+                init_state_val = self.V[self.S0_info["state_string"]] if self.S0_info["state_string"] in self.V else default_state_value
                 if self.env.state_string == self.env.terminal_state_string:
                     next_S = self.env.state
                     next_S_string = self.env.state_string
@@ -214,7 +218,7 @@ class Agent:
                     self.V[self.env.state_string] = default_state_value
 
                 if plus_value_iteration:
-                    if max_G > self.V[self.env.state_string] and self.V[self.env.state_string] >= self.default_state_value:
+                    if max_G > self.V[self.env.state_string]: # and self.V[self.env.state_string] >= self.default_state_value:
                         self.V[self.env.state_string] = max_G
 
                 if plus_value_iteration_with_stack and step < max_steps:
@@ -225,7 +229,7 @@ class Agent:
                         S, S_string, agent_pos = Stack.pop()
                         self.env.set_state(S, S_string, agent_pos)
                         max_G_stack, _, _, _, _ = self.select_action(epsilon)
-                        if max_G_stack > self.V[self.env.state_string] and self.V[self.env.state_string] >= self.default_state_value:
+                        if max_G_stack > self.V[self.env.state_string]: #and self.V[self.env.state_string] >= self.default_state_value:
                             self.V[self.env.state_string] = max_G_stack
 
                 self.env.set_state(next_S, next_S_string, next_agent_pos)
@@ -249,6 +253,11 @@ class Agent:
                     else:
                         self.V[state_string] = self.V[state_string] + 1.0 * (G + curr_V - self.V[state_string])
                 
+                if init_state_val > self.V[self.S0_info["state_string"]]:
+                    print("initial state value decreased from {} to {}".format(init_state_val, self.V[self.S0_info["state_string"]]))
+                    print("Step: {}".format(step))
+                    
+
                 if step >= max_steps + n:
                     break
 
@@ -257,7 +266,7 @@ class Agent:
 
             if done:
                 print("------ Episode {} successful ------".format(episode))   
-
+                print("initial state value: {}".format(self.V[self.S0_info["state_string"]]))
 
     def n_step_TD_2(self, S0,
                   n = 20,
@@ -343,6 +352,8 @@ class Agent:
 
         max_return = -1e90
         max_action = None
+
+        current_potential = self.potential(self.env.state, self.env.agent_pos)
     
         for action in self.env.get_actions():
 
@@ -354,11 +365,15 @@ class Agent:
             else:
                 nextS_value = self.V[nextS_string]
 
-            nextS_potential = self.potential(nextS)
-            current_potential = self.potential(self.env.state)
+            nextS_potential = self.potential(nextS, next_agent_pos)
             reward = self.env.get_reward(self.env.state, nextS, self.env.state_string, nextS_string)
             shaped_reward = reward + nextS_potential - current_potential
             expected_return = nextS_value + shaped_reward
+
+            if current_potential > Agent.select_action.max_potential:
+                Agent.select_action.max_potential = current_potential
+                print("Higher potential reached: {}".format(Agent.select_action.max_potential))
+                self.env.print_state()
 
             results.append((shaped_reward, nextS, nextS_string, next_agent_pos))
         
@@ -375,45 +390,118 @@ class Agent:
 
 
     # A heuristic potential function that can be used for reward shaping
-    def potential(self, state):
-        result = 0
+    def potential(self, state, agent_pos):
+        
+        MD = self.manhattan_distance(state)
+        LC = self.linear_conflict(state)
+        # WMD = self.weighted_manhattan_distance(state)
+        # USP = self.unsolvable_subpuzzle(state, agent_pos)
+        # CCR = self.complete_row_column_heuristic(state)
+        # h = MD + 2 * LC + USP + 5 * CCR
+        h = MD + 2 * LC
+        # h = WMD + 2 * LC
+        h = h * -1
+        return h
+
+
+    def manhattan_distance(self, state):
         n = self.env.n
 
-        h1 = 0
+        md = 0
         for i in range(n):
             for j in range(n):
                 if state[i][j] == 0:
+                    # i2 = n - 1
+                    # j2 = n - 1
                     i2 = i
                     j2 = j
                 else:
                     i2 = (state[i][j] - 1) // n
-                    j2 = state[i][j] - i2 * n - 1
+                    j2 = (state[i][j] - 1) % n
                 
-                h1 += abs(i2 - i) + abs(j2 - j)
+                md += abs(i2 - i) + abs(j2 - j)
 
+        return md
+
+   
+    # Returns the number of linear conflicts in columns and rows
+    def linear_conflict(self, state):
+        n = self.env.n
+        lc = 0
+
+        # Row lc
+        for i in range(n):
+            max_tile = -1
+            for j in range(n):
+                if state[i][j] != 0 and (state[i][j] - 1) // n == i:
+                    if state[i][j] > max_tile:
+                        max_tile = state[i][j]
+                    else:
+                        lc += 1
+
+        # Column lc
+        for j in range(n):
+            max_tile = -1
+            for i in range(n):
+                if state[i][j] != 0 and (state[i][j] - 1) % n == j:
+                    if state[i][j] > max_tile:
+                        max_tile = state[i][j]
+                    else:
+                        lc += 1
+
+        return lc
+
+
+    def unsolvable_subpuzzle(self, state, agent_pos):
+        score = self.complete_row_column_score(state)
+        n = self.env.n        
+        sub_state_string = ""
+        if score != 0:
+            for i in range(score, n):
+                for j in range(score, n):
+                    tmp = str(state[i][j])
+                    if len(tmp) == 1:
+                        sub_state_string += "0"
+                    sub_state_string += tmp
         
-        h1 = -1.0 * h1 / (2 * (n * n - 1.0) * (n - 1))
+            if not self.env.is_valid(sub_state_string):
+                if Agent.unsolvable_subpuzzle.flag:
+                    print("Attention")
+                    # print("inversion count: {}".format(self.env.inversion_count(self.env.state_string)))
+                    # print("agent pos from bottom: {}".format(self.env.agent_pos_from_bottom(self.env.state_string)))
+                    Agent.unsolvable_subpuzzle.flag = False
+                # return int(min([agent_pos[0] - score + 1, agent_pos[1] - score + 1])) + 3
+                return 2
 
-        # x = (1 + n) * n / 2
-
-        # rows = self.complete_row_score(state)
-        # columns = self.complete_column_score(state)
-
-        # h2 = ((rows - x)) / (x)
-
-
-        # row_col = self.complete_row_column_score(state)
-
-        # h3 = row_col / (n - 3) - 1
-
-        # result = 4.0 * (h1 + h2 + h3) / 3.0
-
-        # result = ((h1 + h3) / 2) if (n - 3) != row_col else h1 
-
-        result = 2.0 * h1
+        return 0
 
 
-        return result
+    def weighted_manhattan_distance(self, state):
+        n = self.env.n
+
+        md = 0
+        for i in range(n):
+            for j in range(n):
+                if state[i][j] == 0:
+                    # i2 = n - 1
+                    # j2 = n - 1
+                    i2 = i
+                    j2 = j
+                else:
+                    i2 = (state[i][j] - 1) // n
+                    j2 = (state[i][j] - 1) % n
+                
+                degree = min(i2, j2)
+                if degree >= n - 3:
+                    degree = n - 3
+                weight = n - 2 - degree
+                md += weight * (abs(i2 - i) + abs(j2 - j))
+
+        return md
+
+    def complete_row_column_heuristic(self, state):
+        score = self.complete_row_column_score(state)
+        return self.env.n - score - 3
 
 
     # Returns a score based on the number of completed rows
@@ -430,6 +518,30 @@ class Agent:
                     
         return result
 
+
+    # Returns a score based on the number of completed top and left edges
+    def complete_row_column_score(self, state):
+        result = 0
+        n = self.env.n
+        
+        for i in range(n - 3):
+            in_order_row = 0
+            in_order_column = 0
+            for j in range(n):
+                if state[i][j] == i * n + j + 1:
+                    in_order_row += 1
+                if state[i][j] != i * n + j + 1:
+                    return result
+                if state[j][i] == j * n + i + 1:
+                    in_order_column += 1
+                if state[j][i] != j * n + i + 1:
+                    return result
+                
+            if in_order_row == n and in_order_column == n:
+                result += 1
+
+        return result
+    
 
     # Check if the puzzle is solvable starting from the current state
     def check_validity_from_string(self, state_string):
@@ -462,5 +574,5 @@ class Agent:
 
             # if step > 4 * (self.env.n ** 3):
             #     break
-            if step > 10000:
+            if step > 20000:
                 break

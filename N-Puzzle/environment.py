@@ -12,7 +12,7 @@ class Environment:
         self.terminal_state_string = self.state_string
         self.initial_state_info = None
 
-        Environment.get_reward.attention_flag = True
+        Environment.get_reward.flag = True
 
 
     # Set state and state string and agent pos of the environment
@@ -83,26 +83,38 @@ class Environment:
 
     def get_reward(self, state, next_state, state_string, next_state_string):
         if next_state_string == self.terminal_state_string:
-            R = 1e5
+            R = 1e10
         else:
-            score = self.complete_row_column_score(next_state)
-            R = score + 2 - self.n
-
-            
-            sub_state_string = ""
-            if score != 0 and Environment.get_reward.attention_flag:
-                for i in range(score, self.n):
-                    for j in range(score, self.n):
-                        tmp = str(next_state[i][j])
-                        if len(tmp) == 1:
-                            sub_state_string += "0"
-                        sub_state_string += tmp
-    
-                if not self.is_valid(sub_state_string):
-                    Environment.get_reward.attention_flag = False
-                    print("Attention!")
+            R = -30.0
+            # score = self.complete_row_column_score(next_state)
+            # R = score - self.n + 2
+            # n = self.n
         return R
-    
+
+
+    # Returns a score based on the number of completed top and left edges
+    def complete_row_column_score(self, state):
+        result = 0
+        n = self.n
+        
+        for i in range(n - 3):
+            in_order_row = 0
+            in_order_column = 0
+            for j in range(i, n):
+                if state[i][j] == i * n + j + 1:
+                    in_order_row += 1
+                if state[i][j] != i * n + j + 1:
+                    return result
+                if state[j][i] == j * n + i + 1:
+                    in_order_column += 1
+                if state[j][i] != j * n + i + 1:
+                    return result
+                
+            if in_order_row == n and in_order_column == n:
+                result += 1
+
+        return result
+        
 
     # Returns a score based on the number of completed columns
     def complete_column_score(self, state):
@@ -119,34 +131,12 @@ class Environment:
         return result
     
 
-    # Returns a score based on the number of completed top and left edges
-    def complete_row_column_score(self, state):
-        result = 0
-        for i in range(self.n - 3):
-            in_order_row = 0
-            in_order_column = 0
-            for j in range(self.n):
-                if state[i][j] == i * self.n + j + 1:
-                    in_order_row += 1
-                if state[i][j] != i * self.n + j + 1:
-                    return result
-                if state[j][i] == j * self.n + i + 1:
-                    in_order_column += 1
-                if state[j][i] != j * self.n + i + 1:
-                    return result
-                
-            if in_order_row == self.n and in_order_column == self.n:
-                result += 1
-
-        return result
-    
-
     # Checks if the state is solvable
     def is_valid(self, state_string):
         n = int((len(state_string) // 2) ** (0.5))
 
-        inversions = self.__inversion_count(state_string)
-        agent_pos = self.__agent_pos_from_bottom(state_string)
+        inversions = self.inversion_count(state_string)
+        agent_pos = self.agent_pos_from_bottom(state_string)
 
         if n % 2 == 1:
             if inversions % 2 == 0:
@@ -162,7 +152,7 @@ class Environment:
                 return False
             
 
-    def __inversion_count(self, state_string):
+    def inversion_count(self, state_string):
         result = 0
         lst = []
         n = int((len(state_string) // 2) ** (0.5))
@@ -181,11 +171,11 @@ class Environment:
         return result
     
 
-    def __agent_pos_from_bottom(self, state_string):
+    def agent_pos_from_bottom(self, state_string):
         n = int((len(state_string) // 2) ** (0.5))
         for i in range(0, len(state_string), 2):
             if int(state_string[i:i + 2]) == 0:
-                return n - (i // n)
+                return n - ((i // 2) // n)
 
 
     def print_state(self):

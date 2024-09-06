@@ -37,7 +37,7 @@ def parallel_processing(process_count, N, *args):
         
         d = manager.dict()
         
-        with Pool() as pool:
+        with Pool(processes=10) as pool:
             pool.starmap(do_parallel_processing_on_agent, [(N, initial_state_string, d, *args) for _ in range(process_count)])
 
         # processes = []
