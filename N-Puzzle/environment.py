@@ -83,9 +83,9 @@ class Environment:
 
     def get_reward(self, state, next_state, state_string, next_state_string):
         if next_state_string == self.terminal_state_string:
-            R = 1e10
+            R = 1e8
         else:
-            R = -30.0
+            R = -0.5
             # score = self.complete_row_column_score(next_state)
             # R = score - self.n + 2
             # n = self.n

@@ -1,0 +1,15 @@
+N = 6
+n = 70000
+max_episodes = 100
+max_steps = 70000
+epsilon_start = 0.45
+epsilon_end = 0.45
+
+
+N = 7
+n = 1200000
+max_episodes = 100
+max_steps = 1e6
+epsilon_start = 0.45
+epsilon_end = 0.45
+h = MD + 2 * LC

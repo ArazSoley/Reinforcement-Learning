@@ -218,26 +218,28 @@ class Agent:
                     self.V[self.env.state_string] = default_state_value
 
                 if plus_value_iteration:
-                    if max_G > self.V[self.env.state_string]: # and self.V[self.env.state_string] >= self.default_state_value:
+                    if max_G > self.V[self.env.state_string]: # and max_G >= self.default_state_value:
                         self.V[self.env.state_string] = max_G
 
-                if plus_value_iteration_with_stack and step < max_steps:
+                if plus_value_iteration_with_stack and not done:
                     Stack.append((self.env.state, self.env.state_string, self.env.agent_pos))
 
-                if plus_value_iteration_with_stack and step == max_steps:
+                if plus_value_iteration_with_stack and (done or step == max_steps + n - 1):
                     while len(Stack) > 0:
                         S, S_string, agent_pos = Stack.pop()
                         self.env.set_state(S, S_string, agent_pos)
                         max_G_stack, _, _, _, _ = self.select_action(epsilon)
-                        if max_G_stack > self.V[self.env.state_string]: #and self.V[self.env.state_string] >= self.default_state_value:
+
+                        if max_G_stack > self.V[self.env.state_string] and max_G_stack >= self.default_state_value:
                             self.V[self.env.state_string] = max_G_stack
+
 
                 self.env.set_state(next_S, next_S_string, next_agent_pos)
                 Queue.append((self.env.state_string, R))
                 G += R
                 step += 1
 
-                if len(Queue) >= n + 1:
+                if len(Queue) >= n:
                     state_string, reward = Queue.pop(0)
 
                     if self.env.state_string not in self.V:
